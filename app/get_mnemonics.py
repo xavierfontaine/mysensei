@@ -1,18 +1,13 @@
-from nicegui import ui
+from nicegui import app, ui
 from nicegui.events import ValueChangeEventArguments
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from jinja2 import Environment, FileSystemLoader, Template
 from functools import partial
 from typing import Literal, Optional
 
 from mysensei import text as ms_text
 from mysensei import io as ms_io
-
-
-
-# =============
-# Load template
-# =============
+from mysensei.generation import generate_gpt4_simple
 
 
 # ===========
@@ -21,19 +16,21 @@ from mysensei import io as ms_io
 from typing import Annotated
 ComponentConcept = Annotated[str, "Concept used to recall the target concept"]
 TargetConcept = Annotated[str, "Concept to recall"]
+GeneratedText = Annotated[str, "Generated text"]
 
 
 # =========
 # Constants
 # =========
 N_COMPONENT_CONCEPTS = 4
+STORAGE_SECRET = ms_io.get_conf_toml("secrets.toml")["cookies"]["storage_secret"]
 
 
 # =========
 # Dataclass
 # =========
 @dataclass
-class Concepts:
+class TCConcepts:
     """
     Associate a target concept (to learn,) with component concepts (available
     at the time of recall.)
@@ -51,21 +48,46 @@ class Concepts:
         return [c  for c in self.component_concepts if c != ""]
 
 
-# ===========
-# Other class
-# ===========
+@dataclass
+class SessionData:
+    displayed_result_idx: Optional[int]
 
+
+# =============
+# Other classes
+# =============
+@dataclass
+class TCResult:
+    """Generation result for Target/Component mnemonic"""
+    tc_concepts: TCConcepts
+    mnemonic: GeneratedText
+    revisions: list[GeneratedText] = field(default_factory=list) 
+
+@dataclass
+class TCResults:
+    """list of generation results"""
+    _tc_results: list[TCResult] = field(default_factory=list)
+
+    def add_result(self, tc_result: TCResult)->None:
+        """Add by reference"""
+        self._tc_results.append(tc_result)
+
+    def get_result(self, idx: int)->TCResult:
+        return self._tc_results[idx]
+
+    def len(self)->int:
+        return len(self._tc_results)
 
 
 # ===============
 # Page components
 # ===============
-def concept_inputation_ui(concepts: Concepts)-> None:
+def concept_inputation_ui(concepts: TCConcepts)-> None:
     """UI for inputing the Target and Related Concepts"""
     # Defining update mechanism for concepts
     def update_concept(
         event: ValueChangeEventArguments,
-        concepts: Concepts,
+        concepts: TCConcepts,
         concept_type: Literal["target", "component"],
         position: Optional[int],
     ) -> None:
@@ -99,14 +121,17 @@ def concept_inputation_ui(concepts: Concepts)-> None:
         )
 
 def mnemonic_generation_ui(
-    concepts: Concepts,
+    concepts: TCConcepts,
+    results: TCResults,
     pure_concepts_template: Template,
+    revision_template: Template,
+    session_data: SessionData,
 ):
     # TODO: docstr
-
     # Action on click
-    def act_on_click(
-        concepts: Concepts,
+    def act_on_click_generate(
+        concepts: TCConcepts,
+        results: TCResults,
         pure_concepts_template: Template,
     )->None:
         # Check there is 1 target and 1+ component concepts. If not, display
@@ -121,40 +146,56 @@ def mnemonic_generation_ui(
             return
         else:
             concept_error_label.set_visibility(False)
-        # Render the template
-        print(concepts.nonempty_component_concepts())
+        # Generation
         pure_concepts_prompt = pure_concepts_template.render(
             target_concept = concepts.target_concept,
             component_concepts = concepts.nonempty_component_concepts(),
         )
-        # Display
+        # OpenAI completion
+        output = generate_gpt4_simple(prompt = pure_concepts_prompt)
+        # Storing everything
+        result = TCResult(tc_concepts=concepts, mnemonic=output)
+        results.add_result(result)
+        # Point to the last result
+        session_data.displayed_result_idx = results.len() - 1
+        # Dipslay
         prompt_md.set_content(ms_text.replace_linebreaks_w_br(pure_concepts_prompt))
-        return
-        # OpenAI completion (TODO: clean)
-        from mysensei.generation import openai
-        completion = openai.ChatCompletion.create(
-          model="gpt-4",
-          messages=[
-            {"role": "user", "content": pure_concepts_prompt},
-          ]
-        )
-        output = completion.choices[0].message.content
-        mnemonic_md.set_content(ms_text.replace_linebreaks_w_br(output))
+        #mnemonic_md.set_content(ms_text.replace_linebreaks_w_br(result.mnemonic))
+        # Enable revision
+        revision_button.set_visibility(True)
+
+    def act_on_click_revise(results: TCResults):
+        pass
+
     # Button for generation
     ui.button(
         text="Generate",
         icon="toys",
-        on_click=partial(act_on_click, concepts=concepts,
+        on_click=partial(act_on_click_generate, concepts=concepts,
+                         results=results,
                          pure_concepts_template=pure_concepts_template)
     )
     # Slot for error if something is missing
     concept_error_label = ui.label()
-
     # Prompt
     prompt_md = ui.markdown()
-
-    # Generated mnemonic
+    # Generated mnemonic ; show the one pointed at in app.storage.user
     mnemonic_md = ui.markdown()
+    mnemonic_md.bind_content_from(
+        session_data,
+        "displayed_result_idx",
+        backward=lambda idx: "" if idx is None else results.get_result(idx=idx).mnemonic
+    )
+    # Button for revision
+    revision_button = ui.button(
+        "Revise",
+        on_click=partial(
+            act_on_click_revise, results=results
+        )
+    )
+    if mnemonic_md.content == "":
+        revision_button.set_visibility(False)
+    
 
 
 # ================
@@ -166,17 +207,25 @@ def main_ui()-> None:
     ## TODO: put the template at the direct module scope? (loaded only once per
     ## server loading)
     pure_concepts_template = ms_io.get_jinja_template(template_name="pure_concepts", version = 0)
+    revision_template = ms_io.get_jinja_template(template_name="pure_concepts_revision", version = 0)
+    # Intialize session-specific data storage
+    session_data = SessionData(displayed_result_idx=None)
     # Initialize Concepts object
-    concepts = Concepts(
+    concepts = TCConcepts(
         target_concept="",
         component_concepts=["" for _ in range(N_COMPONENT_CONCEPTS)],
     )
+    # Initialize Results object
+    results = TCResults()
     # Display UI
     concept_inputation_ui(concepts=concepts)
     mnemonic_generation_ui(
         concepts = concepts,
+        results=results,
         pure_concepts_template=pure_concepts_template,
+        revision_template=revision_template,
+        session_data=session_data,
     )
 # Rendering
 main_ui()
-ui.run()
+ui.run(storage_secret=STORAGE_SECRET)
