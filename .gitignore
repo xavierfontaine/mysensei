@@ -1,0 +1,8 @@
+*.pyc
+*.swp
+/*egg-info/
+*/__pycache__/*
+*.cache/
+*/.pytest_cache/*
+
+config/secrets.toml
