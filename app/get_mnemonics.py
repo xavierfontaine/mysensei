@@ -24,6 +24,8 @@ GeneratedText = Annotated[str, "Generated text"]
 # =========
 N_COMPONENT_CONCEPTS = 4
 STORAGE_SECRET = ms_io.get_conf_toml("secrets.toml")["cookies"]["storage_secret"]
+# For testing (replaces GPT4 with some text)
+MOCK_GPT4 = False
 
 
 # =========
@@ -32,7 +34,7 @@ STORAGE_SECRET = ms_io.get_conf_toml("secrets.toml")["cookies"]["storage_secret"
 @dataclass
 class TCConcepts:
     """
-    Associate a target concept (to learn,) with component concepts (available
+    Associate a Target concept (to learn,) with Component concepts (available
     at the time of recall.)
     """
     target_concept: TargetConcept
@@ -47,21 +49,12 @@ class TCConcepts:
     def nonempty_component_concepts(self)->list[ComponentConcept]:
         return [c  for c in self.component_concepts if c != ""]
 
-
-@dataclass
-class SessionData:
-    displayed_result_idx: Optional[int]
-
-
-# =============
-# Other classes
-# =============
 @dataclass
 class TCResult:
     """Generation result for Target/Component mnemonic"""
     tc_concepts: TCConcepts
     mnemonic: GeneratedText
-    revisions: list[GeneratedText] = field(default_factory=list) 
+    revisions: list[TCConcepts] = field(default_factory=list)
 
 @dataclass
 class TCResults:
@@ -78,11 +71,28 @@ class TCResults:
     def len(self)->int:
         return len(self._tc_results)
 
+@dataclass
+class SessionData:
+    displayed_result_idx: int
+    concepts: TCConcepts
+    results: TCResults
+
+    def set_displayed_result_idx(self, idx=int):
+        self.displayed_result_idx = idx
+
+    # Add a getitem for binding functions to be able to access attributes
+    #def __getitem__(self, attribute_name: str):
+        #return self.__getattribute__(attribute_name)
+
+# =============
+# Other classes
+# =============
+
 
 # ===============
 # Page components
 # ===============
-def concept_inputation_ui(concepts: TCConcepts)-> None:
+def concept_inputation_ui(session_data: SessionData)-> None:
     """UI for inputing the Target and Related Concepts"""
     # Defining update mechanism for concepts
     def update_concept(
@@ -97,7 +107,7 @@ def concept_inputation_ui(concepts: TCConcepts)-> None:
             concepts.target_concept = event.value
         # Component concepts
         elif concept_type == "component":
-            if position is None:
+            if position == -1:
                 raise ValueError(
                     f"parameter `position` is not set despite {concept_type=}"
                 )
@@ -109,23 +119,21 @@ def concept_inputation_ui(concepts: TCConcepts)-> None:
     # Inputation of main concept
     ui.label("Target concept")
     target_input = ui.input(
-        on_change=partial(update_concept, concepts=concepts,
+        on_change=partial(update_concept, concepts=session_data.concepts,
         concept_type="target", position=None)
     )
     ui.label("Related concepts")
     # Inputation of related concepts
     for i in range(N_COMPONENT_CONCEPTS):
         ui.input(
-            on_change=partial(update_concept, concepts=concepts,
+            on_change=partial(update_concept, concepts=session_data.concepts,
             concept_type="component", position=i)
         )
 
 def mnemonic_generation_ui(
-    concepts: TCConcepts,
-    results: TCResults,
+    session_data: SessionData,
     pure_concepts_template: Template,
     revision_template: Template,
-    session_data: SessionData,
 ):
     # TODO: docstr
     # Action on click
@@ -152,27 +160,59 @@ def mnemonic_generation_ui(
             component_concepts = concepts.nonempty_component_concepts(),
         )
         # OpenAI completion
-        output = generate_gpt4_simple(prompt = pure_concepts_prompt)
+        if not MOCK_GPT4:
+            output = generate_gpt4_simple(prompt = pure_concepts_prompt)
+        else:
+            output = "Hey there! It a TEST \o/"
         # Storing everything
         result = TCResult(tc_concepts=concepts, mnemonic=output)
         results.add_result(result)
-        # Point to the last result
-        session_data.displayed_result_idx = results.len() - 1
-        # Dipslay
+        # Display the last results
+        change_displayed_mnem_idx(session_data=session_data, new_idx=results.len() - 1)
+        # Dipslay prompt
         prompt_md.set_content(ms_text.replace_linebreaks_w_br(pure_concepts_prompt))
-        #mnemonic_md.set_content(ms_text.replace_linebreaks_w_br(result.mnemonic))
         # Enable revision
         revision_button.set_visibility(True)
 
+    def change_displayed_mnem_idx(session_data: SessionData, new_idx:
+                                     int)->None:
+        """
+        - Change the displayed_mnem_idx
+        - Display the mnem
+        - Modify the enablement of the navigations arrows
+        """
+        results_len = session_data.results.len()
+        assert (new_idx <= results_len - 1) & (new_idx >= 0), f"{new_idx=}"
+        # Change the idx
+        session_data.displayed_result_idx = new_idx
+        # Display the mnem
+        mnemonic_md.set_content(session_data.results.get_result(idx=new_idx).mnemonic)
+        # Disable/Enable arrows by cases
+        if results_len in [0, 1]:
+            back_mnem_icon.set_enabled(False)
+            forward_mnem_icon.set_enabled(False)
+        # The list has length more than 2
+        elif new_idx == 0:
+            back_mnem_icon.set_enabled(False)
+            forward_mnem_icon.set_enabled(True)
+        elif new_idx == results_len - 1:
+            back_mnem_icon.set_enabled(True)
+            forward_mnem_icon.set_enabled(False)
+        else:
+            back_mnem_icon.set_enabled(True)
+            forward_mnem_icon.set_enabled(True)
+
+
     def act_on_click_revise(results: TCResults):
         pass
+
 
     # Button for generation
     ui.button(
         text="Generate",
         icon="toys",
-        on_click=partial(act_on_click_generate, concepts=concepts,
-                         results=results,
+        on_click=partial(act_on_click_generate, concepts=session_data.concepts,
+                         results=session_data.results,
                          pure_concepts_template=pure_concepts_template)
     )
     # Slot for error if something is missing
@@ -181,21 +221,37 @@ def mnemonic_generation_ui(
     prompt_md = ui.markdown()
     # Generated mnemonic ; show the one pointed at in app.storage.user
     mnemonic_md = ui.markdown()
-    mnemonic_md.bind_content_from(
-        session_data,
-        "displayed_result_idx",
-        backward=lambda idx: "" if idx is None else results.get_result(idx=idx).mnemonic
+    #mnemonic_md.bind_content_from(
+        #session_data,
+        #"displayed_result_idx",
+        #backward=lambda idx: "" if idx is None else session_data.results.get_result(idx=idx).mnemonic
+    #)
+    # Buttons for navigating mnemonics
+    back_mnem_icon = ui.button(
+        icon="arrow_back",
+        on_click=lambda session_data=session_data: change_displayed_mnem_idx(session_data=session_data, new_idx=session_data.displayed_result_idx-1)
+        #on_click=lambda session_data=session_data, new_idx=session_data.displayed_result_idx -1 : change_displayed_mnem_idx(session_data=session_data, new_idx=new_idx)
+        #on_click=partial(act_on_click_mnemn_arrow, arrow="back", session_data=session_data),
     )
-    # Button for revision
+    back_mnem_icon.set_enabled(False)
+    forward_mnem_icon = ui.button(
+        icon="arrow_forward",
+        on_click=lambda session_data=session_data: change_displayed_mnem_idx(session_data=session_data, new_idx=session_data.displayed_result_idx+1)
+    )
+    forward_mnem_icon.set_enabled(False)
+    # Button for revision...
     revision_button = ui.button(
         "Revise",
         on_click=partial(
-            act_on_click_revise, results=results
+            act_on_click_revise, results=session_data.results
         )
     )
-    if mnemonic_md.content == "":
-        revision_button.set_visibility(False)
-    
+    # ... shown only if a concept is pointed at
+    revision_button.bind_enabled_from(
+        session_data,
+        "displayed_result_idx",
+        backward=lambda idx: idx is not None
+    )
 
 
 # ================
@@ -209,19 +265,17 @@ def main_ui()-> None:
     pure_concepts_template = ms_io.get_jinja_template(template_name="pure_concepts", version = 0)
     revision_template = ms_io.get_jinja_template(template_name="pure_concepts_revision", version = 0)
     # Intialize session-specific data storage
-    session_data = SessionData(displayed_result_idx=None)
-    # Initialize Concepts object
-    concepts = TCConcepts(
-        target_concept="",
-        component_concepts=["" for _ in range(N_COMPONENT_CONCEPTS)],
+    session_data = SessionData(
+        displayed_result_idx=-1,
+        concepts = TCConcepts(
+            target_concept="",
+            component_concepts=["" for _ in range(N_COMPONENT_CONCEPTS)],
+        ),
+        results = TCResults()
     )
-    # Initialize Results object
-    results = TCResults()
     # Display UI
-    concept_inputation_ui(concepts=concepts)
+    concept_inputation_ui(session_data=session_data)
     mnemonic_generation_ui(
-        concepts = concepts,
-        results=results,
         pure_concepts_template=pure_concepts_template,
         revision_template=revision_template,
         session_data=session_data,
