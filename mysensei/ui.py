@@ -2,7 +2,7 @@
 UI components
 """
 from nicegui import app, ui
-from typing import Any
+from typing import Any, Optional
 from dataclasses import fields, Field
 from jinja2 import Template
 from mysensei.generation import PromptParams, TCConcepts
@@ -18,7 +18,9 @@ class GenerationUI:
     """
 
     def __init__(self, prompt_params: PromptParams, template_name: str,
-                 template_version: str)->None:
+                 template_version: str,
+                 hidden_fields:Optional[list[PromptParamName]]=None,
+                )->None:
         # Init
         self.prompt = ""
         self.can_gen_prompt = False
@@ -26,6 +28,10 @@ class GenerationUI:
         self.prompt_params = prompt_params
         self.template_name = template_name
         self.template_version = template_version
+        if hidden_fields is None:
+            self.hidden_fields = []
+        else:
+            self.hidden_fields = hidden_fields
         # Load template
         self.template = self._load_template()
         # Update initial generability
@@ -66,7 +72,8 @@ class GenerationUI:
         # Loop on fields
         for field in param_fields:
             field_name = field.name
-            self._display_field(field_name=field_name)
+            if field not in self.hidden_fields:
+                self._display_field(field_name=field_name)
 
     def _display_field(self, field_name: PromptParamName)->None:
         """Display one field"""
@@ -121,7 +128,7 @@ class GenerationUI:
 # TO REMOVE
 tc_concepts = TCConcepts(target_concept="zzz", component_concepts={"a":"", "b":
 ""})
-tc_concepts = TCConcepts(target_concept="zzz", component_concepts={"m1": {"a": "", "b": ""}, "m2": {"c": "3"}})
+#tc_concepts = TCConcepts(target_concept="zzz", component_concepts={"m1": {"a": "", "b": ""}, "m2": {"c": "3"}})
 generation_ui = GenerationUI(prompt_params=tc_concepts,
                              template_name="pure_concepts",
                              template_version=0)

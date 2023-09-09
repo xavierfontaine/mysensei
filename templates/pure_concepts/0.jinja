@@ -20,6 +20,6 @@ Associated Concepts:
 Your mnemonic: Imagine scientists striving to make APPARENT the SUBTLE organisms using magnifying MIRRORS. Each mirror intensifies the reflection from those beneath it, so that even the tiniest creatures become visible. These scientists have just invented the MICROSCOPE.
 
 Main Concept: {{ target_concept }}
-Associated Concepts:{% for component_concept in component_concepts %}
+Associated Concepts:{% for component_concept in component_concepts.values() %}
 {{ loop.index }}/ {{ component_concept }}{% endfor %}
 Your mnemonic:

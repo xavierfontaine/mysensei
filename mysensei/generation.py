@@ -49,16 +49,22 @@ class PromptParams:
     def get_filled_out_fields_subfields(self)->dict[PromptParamName, 
         Union[str, dict[str, str], dict[str, dict[str, str]]]]:
         """Return the dict of parameters, leaving out empty fields/subfields"""
+        # Drop the empty fields
         filled_field_names = [n for n in self._get_fields_names() if n not in
             self.non_filled_out_fields()]
         output = {
-            n:deepcopy(self._get_field_attribute(field_name=n)) 
+            n: deepcopy(self._get_field_attribute(field_name=n)) 
             for n in filled_field_names
         }
-        for k, v in output.items():
-            if not self._field_is_filled_out(field_value=v, field_name=k):
-                output.pop(key=k)
-            return output
+        # Drop the empty subfields
+        for field_name, field_value in output.items():
+            if isinstance(field_value, dict):
+                subfields_to_drop = []
+                for subfield_name, subfield_value in field_value.items():
+                    if not self._field_is_filled_out(field_value=subfield_value, field_name=subfield_name):
+                        subfields_to_drop.append(subfield_name)
+                [field_value.pop(to_drop) for to_drop in subfields_to_drop]
+        return output
 
     def _get_fields_names(self)->list[PromptParamName]:
         """Return all fields (class attributes)"""
