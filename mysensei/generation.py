@@ -2,7 +2,8 @@
 Tools for text generation
 """
 import openai
-from dataclasses import dataclass, fields
+from copy import deepcopy
+from dataclasses import dataclass, fields, Field
 from typing import Any, Union
 from jinja2 import Template
 
@@ -28,7 +29,7 @@ class PromptFieldTypeError(Exception):
 class PromptParams:
     """A generic dataclass for fromp parameters. 
 
-    Fields must be str, dict[str, str] or dict[str, dict[str, str]]
+    Fields must be str, dict[str, str] or dict[str, dict[str, str]].
     """
     pass
 
@@ -37,14 +38,37 @@ class PromptParams:
 
         For dict fields, we need at least one element to be non-null."""
         non_field_out = []
-        self_fields = fields(self)
-        for field in self_fields:
-            field_name = field.name
-            field_value = self.__getattribute__(field_name)
+        fields_names = self._get_fields_names()
+        for field_name in fields_names:
+            field_value = self._get_field_attribute(field_name=field_name)
             if not self._field_is_filled_out(field_value=field_value,
                                               field_name=field_name):
                 non_field_out.append(field_name)
         return non_field_out
+
+    def get_filled_out_fields_subfields(self)->dict[PromptParamName, 
+        Union[str, dict[str, str], dict[str, dict[str, str]]]]:
+        """Return the dict of parameters, leaving out empty fields/subfields"""
+        filled_field_names = [n for n in self._get_fields_names() if n not in
+            self.non_filled_out_fields()]
+        output = {
+            n:deepcopy(self._get_field_attribute(field_name=n)) 
+            for n in filled_field_names
+        }
+        for k, v in output.items():
+            if not self._field_is_filled_out(field_value=v, field_name=k):
+                output.pop(key=k)
+            return output
+
+    def _get_fields_names(self)->list[PromptParamName]:
+        """Return all fields (class attributes)"""
+        return [f.name for f in fields(self)]
+
+    def _get_field_attribute(self, field_name: str)->Union[str, dict[str, str], dict[str, dict[str, str]]]:
+        """Return value associated to a field"""
+        return self.__getattribute__(field_name)
+
+
 
     def _field_is_filled_out(self, field_value: str, field_name: str)->bool:
         """Check if all fields are str or nested dict of str with at least one
@@ -76,6 +100,7 @@ class PromptParams:
         """Return error msg for field type errors"""
         error_msg = "Field {field_name} is not str, dict[str, str] or dict[str, dict[str, str]]"
         return error_msg.format(field_name=field_name)
+
 
 
 @dataclass

@@ -1,3 +1,4 @@
+from datetime import datetime
 from nicegui import app, ui
 from nicegui.events import ValueChangeEventArguments
 from dataclasses import dataclass, field
@@ -66,7 +67,10 @@ class TCResults:
         self._tc_results.append(tc_result)
 
     def get_result(self, idx: int)->TCResult:
-        return self._tc_results[idx]
+        if len(self._tc_results) == 0:
+            return ""
+        else:
+            return self._tc_results[idx]
 
     def len(self)->int:
         return len(self._tc_results)
@@ -80,9 +84,6 @@ class SessionData:
     def set_displayed_result_idx(self, idx=int):
         self.displayed_result_idx = idx
 
-    # Add a getitem for binding functions to be able to access attributes
-    #def __getitem__(self, attribute_name: str):
-        #return self.__getattribute__(attribute_name)
 
 # =============
 # Other classes
@@ -163,14 +164,14 @@ def mnemonic_generation_ui(
         if not MOCK_GPT4:
             output = generate_gpt4_simple(prompt = pure_concepts_prompt)
         else:
-            output = "Hey there! It a TEST \o/"
+            output = f"Hey there! It a TEST \o/ {datetime.today()}"
         # Storing everything
         result = TCResult(tc_concepts=concepts, mnemonic=output)
         results.add_result(result)
         # Display the last results
         change_displayed_mnem_idx(session_data=session_data, new_idx=results.len() - 1)
         # Dipslay prompt
-        prompt_md.set_content(ms_text.replace_linebreaks_w_br(pure_concepts_prompt))
+        #prompt_md.set_content(ms_text.replace_linebreaks_w_br(pure_concepts_prompt))
         # Enable revision
         revision_button.set_visibility(True)
 
@@ -219,6 +220,11 @@ def mnemonic_generation_ui(
     concept_error_label = ui.label()
     # Prompt
     prompt_md = ui.markdown()
+    prompt_md.bind_content_from(
+        target_object=session_data,
+        target_name="results",
+        backward=lambda obj, idx=session_data.displayed_result_idx: obj.get_result(idx=idx)
+    )
     # Generated mnemonic ; show the one pointed at in app.storage.user
     mnemonic_md = ui.markdown()
     #mnemonic_md.bind_content_from(
