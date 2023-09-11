@@ -4,11 +4,11 @@ Tools for text generation
 import openai
 from copy import deepcopy
 from dataclasses import dataclass, fields, Field
-from typing import Any, Union
+from typing import Any, Union, Literal
 from jinja2 import Template
 
 import mysensei.io as ms_io
-from mysensei.annotations import TargetConcept, ComponentConcept, PromptParamName
+from mysensei.annotations import TargetConcept, ComponentConcept, PromptParamName, Prompt
 
 
 # =========
@@ -110,13 +110,31 @@ class PromptParams:
 
 
 @dataclass
-class TCConcepts(PromptParams):
+class TCParams(PromptParams):
     """
     Associate a Target concept (to learn,) with Component concepts (available
     at the time of recall.)
     """
     target_concept: TargetConcept
     component_concepts: dict[str, ComponentConcept]
+
+
+@dataclass
+class TCRevisionParams(TCParams):
+    """
+    Inherits from TCParams. Used for mnemonic revision.
+    """
+    mnemonic: str
+
+
+@dataclass
+class TCSoundParams(PromptParams):
+    """
+    Associate a Target concept (to learn,) with the *sound* of a Component concepts.
+    """
+    target_concept: TargetConcept
+    component_concepts: dict[str, dict[Literal["concept", "details", "sound"], str]]
+    meaning_mnemonic: str
 
 
 # ======

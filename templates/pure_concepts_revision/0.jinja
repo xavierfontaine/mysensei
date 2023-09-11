@@ -1,6 +1,6 @@
-I am writing a mnemonic story, which should connect these for concepts, upper-casing them and preserving their order:
-- {{ target_concept }}{% for component_concept in component_concepts %}
+I am writing a mnemonic story, which should connect these for concepts, upper-casing them and preserving their order:{% for component_concept in component_concepts.values() %}
 - {{ component_concept }}{% endfor %}
+- {{ target_concept }}
 
 I devised the following mnemonic: {{ mnemonic }}
 
