@@ -131,7 +131,7 @@ class TCSoundParams(PromptParams):
     Associate a Target concept (to learn,) with the *sound* of a Component concepts.
     """
     target_concept: TargetConcept
-    component_concepts: dict[str, dict[Literal["concept", "details", "sound"], str]]
+    component_concepts_sounds: dict[str, dict[Literal["concept", "details", "sound"], str]]
     meaning_mnemonic: str
 
 
