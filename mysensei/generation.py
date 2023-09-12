@@ -74,8 +74,6 @@ class PromptParams:
         """Return value associated to a field"""
         return self.__getattribute__(field_name)
 
-
-
     def _field_is_filled_out(self, field_value: str, field_name: str)->bool:
         """Check if all fields are str or nested dict of str with at least one
         non-null value"""
@@ -120,7 +118,7 @@ class TCParams(PromptParams):
 
 
 @dataclass
-class TCRevisionParams(TCParams):
+class TCRevisionParams(PromptParams):
     """
     Inherits from TCParams. Used for mnemonic revision.
     """

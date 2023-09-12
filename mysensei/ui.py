@@ -18,9 +18,11 @@ class PromptUI:
     Display inputable fields, a prompt rendering button, and the prompt itself
     """
 
-    def __init__(self, prompt_params: PromptParams, template_name: str,
+    def __init__(self, prompt_params: PromptParams,
+                 template_name: str,
                  template_version: str,
                  hidden_fields:Optional[list[PromptParamName]]=None,
+                 auxiliary_prompt_params_lst: Optional[list[PromptParams]]=None,
                  multirow_fields:Optional[list[PromptParamName]]=None,
                 )->None:
         # Init
@@ -39,6 +41,10 @@ class PromptUI:
             self.multirow_fields = []
         else:
             self._update_multirow_fields(fields_to_expand=multirow_fields)
+        if auxiliary_prompt_params_lst is None:
+            self.auxiliary_prompt_params_lst = []
+        else:
+            self.auxiliary_prompt_params_lst = auxiliary_prompt_params_lst
         # Load template
         self.template = self._load_template()
         # Update initial generability
@@ -51,6 +57,7 @@ class PromptUI:
         self._display_prompt()
 
     def _update_hidden_fields(self, fields_to_hide: list[PromptParamName]):
+        #TODO: docstr
         for f in fields_to_hide:
             if f not in self.prompt_params._get_fields_names():
                 raise KeyError(
@@ -61,6 +68,7 @@ class PromptUI:
         self.hidden_fields = fields_to_hide
 
     def _update_multirow_fields(self, fields_to_expand: list[PromptParamName]):
+        #TODO: docstr
         for f in fields_to_expand:
             if f not in self.prompt_params._get_fields_names():
                 raise KeyError(
@@ -80,9 +88,15 @@ class PromptUI:
         ui.label().bind_text_from(target_object=self, target_name="prompt_params", backward=lambda x: x.__str__())
 
     def _update_prompt(self)->None:
-        """Update self.prompt by rendering the template with self.prompt_params"""
+        """Update self.prompt by rendering the template with self.prompt_params
+        and auxiliary_prompt_params_lst"""
+        # Merge auxiliary_prompt_params with prompt_params
+        prompt_params_dict = self.prompt_params.get_filled_out_fields_subfields()
+        _ = [prompt_params_dict.update(aux_prompt_params.get_filled_out_fields_subfields()) 
+            for aux_prompt_params in self.auxiliary_prompt_params_lst]
+        # Get prompt
         prompt = self.template.render(
-            **self.prompt_params.get_filled_out_fields_subfields()
+            **prompt_params_dict
         )
         self.prompt = prompt
 
